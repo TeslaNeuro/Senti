@@ -1,9 +1,16 @@
+# Copyright (c) 2026 Arshia Keshvari
+# SPDX-License-Identifier: MIT
+#
+# This file is part of Senti.
+# Licensed under the MIT License. See the LICENSE file for details.
+
 """Ultralytics YOLO26 object detector."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 import time
 from collections import deque
 from pathlib import Path
@@ -11,9 +18,10 @@ from typing import Optional
 
 import numpy as np
 
-from app.config import AppConfig
+from app.config import PROJECT_ROOT, AppConfig, models_directory
 from app.detection.detector import Detection, DetectionMetrics, DetectionResult, ObjectDetector
-from app.tracking.tracker import TrackMonitor, TrackUpdate
+from app.detection.parsing import parse_yolo_results
+from app.tracking.tracker import TrackMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -34,21 +42,45 @@ def resolve_yolo_device(requested: str) -> str:
     return "cpu"
 
 
-def resolve_model_path(model_name: str) -> str:
-    """Prefer a local model file in models/ when present."""
-    project_root = Path(__file__).resolve().parent.parent.parent
-    local_path = project_root / "models" / model_name
-    if local_path.is_file():
-        return str(local_path)
-    return model_name
+def resolve_model_path(model_name: str, *, project_root: Path | None = None) -> str:
+    """Resolve YOLO weights to an absolute path under ``models/``.
+
+    Ultralytics downloads to whatever path ``YOLO()`` receives. A bare name
+    such as ``yolo26s.pt`` would land in the process cwd (the repo root).
+    Always passing ``<root>/models/<file>`` keeps weights in ``models/``.
+
+    Weights that were previously downloaded into the project root are moved
+    into ``models/`` on first resolve. Absolute paths are used as-is so a
+    custom checkpoint can live outside the repo.
+    """
+    raw = model_name.strip()
+    if not raw:
+        raise ValueError("YOLO_MODEL must not be empty.")
+
+    candidate = Path(raw).expanduser()
+    if candidate.is_absolute():
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        return str(candidate)
+
+    root = project_root or PROJECT_ROOT
+    target = models_directory(root) / candidate.name
+    legacy = root / candidate.name
+    if legacy.is_file() and legacy.resolve() != target.resolve():
+        if target.is_file():
+            logger.info("Using %s; removing leftover %s", target, legacy)
+            legacy.unlink()
+        else:
+            logger.info("Moving YOLO weights from %s to %s", legacy, target)
+            shutil.move(str(legacy), str(target))
+    return str(target)
 
 
 class Yolo26Detector(ObjectDetector):
     """YOLO26 detector backed by Ultralytics."""
 
-    def __init__(self, config: AppConfig) -> None:
+    def __init__(self, config: AppConfig, device: str | None = None) -> None:
         self._config = config
-        self._device = resolve_yolo_device(config.yolo_device)
+        self._device = device or resolve_yolo_device(config.yolo_device)
         self._model = None
         self._ready = False
         self._load_error: Optional[str] = None
@@ -128,7 +160,7 @@ class Yolo26Detector(ObjectDetector):
 
         inference_ms = (time.perf_counter() - started) * 1000.0
         self._timestamps.append(time.perf_counter())
-        detections = self._parse_results(results)
+        detections = parse_yolo_results(results)
         track_update = None
         if self._config.tracking_enabled:
             track_update = self._track_monitor.update(detections)
@@ -150,38 +182,7 @@ class Yolo26Detector(ObjectDetector):
         )
 
     def _parse_results(self, results) -> list[Detection]:
-        if not results:
-            return []
-
-        result = results[0]
-        boxes = getattr(result, "boxes", None)
-        if boxes is None:
-            return []
-
-        names = result.names or {}
-        detections: list[Detection] = []
-        xyxy = boxes.xyxy.cpu().numpy()
-        if xyxy.size == 0:
-            return []
-        confidences = boxes.conf.cpu().numpy()
-        class_ids = boxes.cls.cpu().numpy().astype(int)
-        track_ids = None
-        if getattr(boxes, "id", None) is not None:
-            track_ids = boxes.id.cpu().numpy().astype(int)
-
-        for idx, (x1, y1, x2, y2) in enumerate(xyxy):
-            class_id = int(class_ids[idx])
-            track_id = int(track_ids[idx]) if track_ids is not None else None
-            detections.append(
-                Detection(
-                    class_id=class_id,
-                    class_name=str(names.get(class_id, f"class_{class_id}")),
-                    confidence=float(confidences[idx]),
-                    bbox=(int(x1), int(y1), int(x2), int(y2)),
-                    track_id=track_id,
-                )
-            )
-        return detections
+        return parse_yolo_results(results)
 
     def _detection_fps(self) -> float:
         if len(self._timestamps) < 2:

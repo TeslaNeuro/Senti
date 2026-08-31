@@ -1,3 +1,9 @@
+# Copyright (c) 2026 Arshia Keshvari
+# SPDX-License-Identifier: MIT
+#
+# This file is part of Senti.
+# Licensed under the MIT License. See the LICENSE file for details.
+
 """Background detection worker that always prefers the latest camera frame."""
 
 from __future__ import annotations
@@ -12,7 +18,7 @@ from app.camera.capture import CameraCapture
 from app.camera.frame_buffer import CameraFrame
 from app.config import AppConfig
 from app.detection.detector import DetectionResult
-from app.detection.yolo26_detector import Yolo26Detector
+from app.detection.backend import create_detector
 from app.perception.engine import ScenePerceptionEngine, SceneState
 
 logger = logging.getLogger(__name__)
@@ -30,7 +36,7 @@ class DetectionThread(QThread):
         super().__init__(parent)
         self._config = config
         self._camera = camera
-        self._detector: Optional[Yolo26Detector] = None
+        self._detector = None
         self._scene_engine = ScenePerceptionEngine(config)
         self._running = True
         self._last_processed_id = -1
@@ -49,7 +55,7 @@ class DetectionThread(QThread):
         self.wait(3000)
 
     def run(self) -> None:
-        self._detector = Yolo26Detector(self._config)
+        self._detector = create_detector(self._config)
         try:
             self._detector.load()
             self.model_loaded.emit(self._detector.device)

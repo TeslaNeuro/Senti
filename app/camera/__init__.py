@@ -1,4 +1,13 @@
-"""Camera package."""
+# Copyright (c) 2026 Arshia Keshvari
+# SPDX-License-Identifier: MIT
+#
+# This file is part of Senti.
+# Licensed under the MIT License. See the LICENSE file for details.
+
+"""Camera capture and bounded in-memory frame buffering.
+
+Frames stay in RAM only. Nothing in this package writes video to disk.
+"""
 
 from app.camera.frame_buffer import BoundedFrameBuffer, CameraFrame, CameraFrameBuffer
 

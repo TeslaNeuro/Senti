@@ -1,3 +1,9 @@
+# Copyright (c) 2026 Arshia Keshvari
+# SPDX-License-Identifier: MIT
+#
+# This file is part of Senti.
+# Licensed under the MIT License. See the LICENSE file for details.
+
 """Tests for macOS say voice helpers."""
 
 from app.speech.macos_say import find_macos_voice, map_rate_to_say_wpm, parse_macos_voice_list

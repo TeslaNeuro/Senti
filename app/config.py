@@ -1,3 +1,9 @@
+# Copyright (c) 2026 Arshia Keshvari
+# SPDX-License-Identifier: MIT
+#
+# This file is part of Senti.
+# Licensed under the MIT License. See the LICENSE file for details.
+
 """Centralized application configuration."""
 
 from __future__ import annotations
@@ -10,8 +16,16 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = _PROJECT_ROOT
 _ENV_PATH = _PROJECT_ROOT / ".env"
 _ENV_EXAMPLE_PATH = _PROJECT_ROOT / ".env.example"
+
+
+def models_directory(project_root: Path | None = None) -> Path:
+    """Return ``<root>/models``, creating the directory if needed."""
+    path = (project_root or PROJECT_ROOT) / "models"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def _load_env_files(env_path: Path | None = None) -> None:
@@ -95,17 +109,18 @@ class AppConfig:
     frame_buffer_size: int
     selection_buffer_size: int
 
-    # YOLO26 (Phase 2+)
+    # Detection (YOLO26)
     yolo_model: str
     yolo_confidence: float
     yolo_image_size: int
     yolo_device: str
+    yolo_runtime: str
 
-    # Tracking (Phase 3+)
+    # Tracking
     tracking_enabled: bool
     tracker_type: str
 
-    # Scene / VLM (later phases)
+    # Scene change and VLM
     scene_change_threshold: float
     stability_frames: int
     vlm_cooldown: float
@@ -157,6 +172,7 @@ class AppConfig:
             yolo_confidence=_env_float("YOLO_CONFIDENCE", 0.5),
             yolo_image_size=_env_int("YOLO_IMAGE_SIZE", 640),
             yolo_device=os.getenv("YOLO_DEVICE", "auto"),
+            yolo_runtime=os.getenv("YOLO_RUNTIME", "auto"),
             tracking_enabled=_env_bool("TRACKING_ENABLED", True),
             tracker_type=os.getenv("TRACKER_TYPE", "bytetrack.yaml"),
             scene_change_threshold=_env_float("SCENE_CHANGE_THRESHOLD", 0.15),
@@ -207,8 +223,10 @@ class AppConfig:
             raise ValueError("YOLO_CONFIDENCE must be in (0, 1].")
         if self.yolo_image_size <= 0:
             raise ValueError("YOLO_IMAGE_SIZE must be positive.")
-        if self.yolo_device.strip().lower() not in {"auto", "mps", "cpu", "cuda", "0"}:
-            raise ValueError("YOLO_DEVICE must be one of: auto, mps, cpu, cuda, 0.")
+        if self.yolo_device.strip().lower() not in {"auto", "mps", "mlx", "cpu", "cuda", "0"}:
+            raise ValueError("YOLO_DEVICE must be one of: auto, mps, mlx, cpu, cuda, 0.")
+        if self.yolo_runtime.strip().lower() not in {"auto", "ultralytics", "mlx"}:
+            raise ValueError("YOLO_RUNTIME must be one of: auto, ultralytics, mlx.")
         if self.tracker_type not in {"bytetrack.yaml", "botsort.yaml"}:
             raise ValueError("TRACKER_TYPE must be bytetrack.yaml or botsort.yaml.")
         if not 0.0 < self.scene_change_threshold <= 1.0:
@@ -226,7 +244,7 @@ class AppConfig:
         if not 0.0 <= self.ocr_min_confidence <= 1.0:
             raise ValueError("OCR_MIN_CONFIDENCE must be in [0, 1].")
         if self.ocr_runtime.strip().lower() not in {"easyocr"}:
-            raise ValueError("OCR_RUNTIME must be 'easyocr' for Phase 10.")
+            raise ValueError("OCR_RUNTIME must be 'easyocr'.")
         if not -1.0 <= self.tts_rate <= 1.0:
             raise ValueError("TTS_RATE must be in [-1, 1].")
         if not 0.0 <= self.tts_volume <= 1.0:
@@ -234,7 +252,7 @@ class AppConfig:
         if self.tts_runtime.strip().lower() not in {"auto", "qt", "say"}:
             raise ValueError("TTS_RUNTIME must be one of: auto, qt, say.")
         if self.voice_runtime.strip().lower() not in {"whisper"}:
-            raise ValueError("VOICE_RUNTIME must be 'whisper' for Phase 12.")
+            raise ValueError("VOICE_RUNTIME must be 'whisper'.")
         if self.voice_max_seconds <= 0:
             raise ValueError("VOICE_MAX_SECONDS must be positive.")
         if self.voice_min_seconds < 0:
@@ -242,7 +260,7 @@ class AppConfig:
         if self.voice_sample_rate <= 0:
             raise ValueError("VOICE_SAMPLE_RATE must be positive.")
         if self.vlm_runtime.strip().lower() not in {"ollama"}:
-            raise ValueError("VLM_RUNTIME must be 'ollama' for Phase 6.")
+            raise ValueError("VLM_RUNTIME must be 'ollama'.")
         if not self.vlm_model.strip():
             raise ValueError("VLM_MODEL must be set.")
         if self.log_level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:

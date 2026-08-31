@@ -37,6 +37,8 @@ ENV/
 
 # Models (downloaded weights)
 *.pt
+*.npz
+*.safetensors
 models/*.onnx
 models/*.mlx
 !models/.gitkeep

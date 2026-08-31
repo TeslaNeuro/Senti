@@ -1,3 +1,9 @@
+# Copyright (c) 2026 Arshia Keshvari
+# SPDX-License-Identifier: MIT
+#
+# This file is part of Senti.
+# Licensed under the MIT License. See the LICENSE file for details.
+
 """macOS `say` command helpers for voices Qt does not expose."""
 
 from __future__ import annotations

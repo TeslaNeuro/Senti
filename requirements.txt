@@ -1,3 +1,9 @@
+# Copyright (c) 2026 Arshia Keshvari
+# SPDX-License-Identifier: MIT
+#
+# This file is part of Senti.
+# Licensed under the MIT License. See the LICENSE file for details.
+
 PySide6>=6.11.2
 numpy>=2.5.2
 python-dotenv>=1.2.3
@@ -7,3 +13,7 @@ pytest>=9.1.1
 easyocr>=1.7.2
 sounddevice>=0.5.6
 faster-whisper>=1.2.1
+
+# Optional: native Apple Silicon YOLO via https://github.com/thewebAI/yolo-mlx
+#   pip install "yolo-mlx[tracking,convert]"
+# Then set YOLO_RUNTIME=mlx  (or YOLO_DEVICE=mlx)

@@ -1,264 +1,299 @@
-# What Am I Looking At?
+<p align="center">
+  <img src="docs/assets/senti-logo.png" width="168" alt="Senti iris logo">
+</p>
 
-A local-first macOS visual assistant that uses your MacBook camera to understand what you are looking at.
+<h1 align="center">Senti</h1>
 
-**Phase 13 (current):** polish — faster startup, clearer status, busy-state UX, and shortcuts.
+<p align="center">
+  <b>What Am I Looking At?</b><br>
+  A local-first visual assistant for macOS — it sees the scene, names the objects, and answers your questions. On your Mac. Nothing uploaded.
+</p>
 
-## Architecture (planned)
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge" alt="MIT License"></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.11+"></a>
+  <a href="https://www.apple.com/mac/"><img src="https://img.shields.io/badge/macOS-Apple%20Silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Apple Silicon"></a>
+  <a href="#privacy"><img src="https://img.shields.io/badge/Privacy-Local--first-34c759?style=for-the-badge&logo=letsencrypt&logoColor=white" alt="Local-first privacy"></a>
+  <a href="https://docs.pytest.org/"><img src="https://img.shields.io/badge/pytest-unit%20tests-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white" alt="pytest"></a>
+</p>
 
-| Layer | Technology |
-| --- | --- |
-| UI | PySide6 (native macOS look, AVFoundation via Qt Multimedia) |
-| Fast loop (perception) | Ultralytics YOLO26 on Apple Silicon (`device=mps`) |
-| Deep loop (understanding) | Local VLM (Ollama / configurable backend) |
-| OCR | EasyOCR (local, optional) |
-| Speech | macOS `NSSpeechSynthesizer` via Qt TextToSpeech |
-| Voice input | faster-whisper (local, push-to-talk) |
+<p align="center">
+  <a href="#quick-start"><strong>Quick start</strong></a> ·
+  <a href="#how-it-works"><strong>How it works</strong></a> ·
+  <a href="#stack"><strong>Stack</strong></a> ·
+  <a href="docs/README.md"><strong>Docs</strong></a> ·
+  <a href="#license"><strong>License</strong></a>
+</p>
 
-Two processing loops keep the app responsive:
+<p align="center">
+  <img src="docs/assets/senti-banner.jpg" alt="Senti — local-first visual assistant on macOS" width="100%">
+</p>
 
-- **Fast loop:** camera → YOLO26 → tracking → scene-change detection (15–30 FPS target)
-- **Slow loop:** frame selection → OCR → local VLM (only on meaningful scene changes or user questions)
+## ✨ Why Senti
 
-## Requirements
+Most visual assistants ship camera frames to a cloud API. **Senti does not.**
 
-- macOS on Apple Silicon (developed for M2 Pro)
-- Python 3.11+
-- MacBook built-in camera
-- Camera permission
+It is built for Apple Silicon so the fast path — object detection and tracking — stays at interactive rates, while the slow path — a local vision-language model via [Ollama](https://ollama.com) — only runs when the scene actually changes or you ask a question.
 
-## Setup
+| 🎯 Live boxes & track IDs | 💬 Follow-up questions | 🔍 Object focus |
+| :---: | :---: | :---: |
+| YOLO26 labels, confidence, stable `#1` `#2` IDs | *“What’s that connector?”* *“What objects do you see?”* | Crop `#2 phone` before the VLM sees it |
+| 📝 On-device OCR | 🔊 Spoken answers | 🎙️ Push-to-talk |
+| Ask `read this` or auto-read on `READY` | macOS TTS (Qt or `say`) | Local Whisper, **Esc** to cancel |
+
+## 🚀 Features
+
+| | Capability | Detail |
+| :---: | --- | --- |
+| 🎥 | **Live perception** | YOLO26 on Apple Silicon — PyTorch `mps` or yolo-mlx Metal — plus ByteTrack / BoT-SORT IDs |
+| 🧭 | **Scene intelligence** | Visual + object + spatial change detection, stability gating, best-frame selection |
+| 🧠 | **Local understanding** | Ollama VLM, auto-analysis when the scene settles, conversational memory |
+| ✂️ | **Object focus** | Padded crop of the most likely target before a focused question |
+| 🔤 | **On-device OCR** | EasyOCR on demand (`read this`) or automatically when the scene is ready |
+| 🗣️ | **Speech I/O** | macOS TTS and local Whisper push-to-talk |
+| 🔐 | **Privacy by design** | No cloud uploads, no disk recordings, bounded in-memory frame buffer |
+
+<a id="how-it-works"></a>
+
+## 🧠 How it works
+
+Two loops keep the UI live. The camera never waits on the language model.
+
+<p align="center">
+  <img src="docs/assets/senti-pipeline.jpg" alt="Camera → detect → understand → speak" width="100%">
+</p>
+
+```mermaid
+flowchart LR
+  Cam["📷 Camera"] --> Fast
+  subgraph Fast["⚡ Fast loop — 15–30 FPS"]
+    YOLO["🎯 YOLO26 + tracking"]
+    Scene["🧭 Scene change + stability"]
+    YOLO --> Scene
+  end
+  Fast --> Slow
+  subgraph Slow["🌙 Slow loop — on change or question"]
+    Frame["🖼️ Best-frame selection"]
+    OCR["🔤 Optional OCR"]
+    VLM["🧠 Local VLM"]
+    Frame --> OCR --> VLM
+  end
+  Slow --> UI["🖥️ Desktop UI + TTS"]
+  Mic["🎙️ Push-to-talk"] --> UI
+  UI --> Ask["💬 Ask / Focus / Analyze"]
+  Ask --> Slow
+```
+
+1. **⚡ Fast loop** — frames go to YOLO26, then tracking and scene-change detection. Target: 15–30 FPS.
+2. **🌙 Slow loop** — when the scene reaches `READY`, Senti picks the sharpest, most stable frame from a rolling buffer and sends it to the local VLM (and OCR, if enabled). Follow-ups reuse scene memory when they can.
+
+State machine: `WATCHING` → `SCENE_CHANGED` → `WAITING_FOR_STABILITY` → `READY`
+
+Full package map and thread model: **[Architecture](docs/architecture.md)**.
+
+<a id="stack"></a>
+
+## 🧩 Stack
+
+Every runtime dependency, with a badge that opens its **official site**. Click through — these are the projects Senti stands on.
+
+<p align="center">
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python"></a>
+  <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-Apple%20Silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="macOS"></a>
+  <a href="https://doc.qt.io/qtforpython-6/"><img src="https://img.shields.io/badge/PySide6-Qt%20for%20Python-41CD52?style=for-the-badge&logo=qt&logoColor=white" alt="PySide6"></a>
+  <a href="https://www.qt.io/"><img src="https://img.shields.io/badge/Qt-Multimedia%20%2B%20TTS-41CD52?style=for-the-badge&logo=qt&logoColor=white" alt="Qt"></a>
+  <a href="https://numpy.org/"><img src="https://img.shields.io/badge/NumPy-2.x-013243?style=for-the-badge&logo=numpy&logoColor=white" alt="NumPy"></a>
+  <a href="https://opencv.org/"><img src="https://img.shields.io/badge/OpenCV-Vision-5C3EE8?style=for-the-badge&logo=opencv&logoColor=white" alt="OpenCV"></a>
+  <a href="https://www.ultralytics.com/"><img src="https://img.shields.io/badge/Ultralytics-YOLO26-111F68?style=for-the-badge&logo=ultralytics&logoColor=white" alt="Ultralytics"></a>
+  <a href="https://docs.ultralytics.com/models/yolo26/"><img src="https://img.shields.io/badge/YOLO26-Detection-FF6F00?style=for-the-badge" alt="YOLO26"></a>
+  <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-MPS-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white" alt="PyTorch"></a>
+  <a href="https://github.com/ml-explore/mlx"><img src="https://img.shields.io/badge/MLX-Metal-000000?style=for-the-badge" alt="MLX"></a>
+  <a href="https://github.com/thewebAI/yolo-mlx"><img src="https://img.shields.io/badge/yolo--mlx-optional-FF6F00?style=for-the-badge" alt="yolo-mlx"></a>
+  <a href="https://ollama.com/"><img src="https://img.shields.io/badge/Ollama-Local%20VLM-000000?style=for-the-badge&logo=ollama&logoColor=white" alt="Ollama"></a>
+  <a href="https://www.jaided.ai/easyocr/"><img src="https://img.shields.io/badge/EasyOCR-On--device%20text-1A73E8?style=for-the-badge" alt="EasyOCR"></a>
+  <a href="https://github.com/SYSTRAN/faster-whisper"><img src="https://img.shields.io/badge/faster--whisper-STT-7C5CFF?style=for-the-badge" alt="faster-whisper"></a>
+  <a href="https://python-sounddevice.readthedocs.io/"><img src="https://img.shields.io/badge/sounddevice-Mic%20capture-1f425f?style=for-the-badge" alt="sounddevice"></a>
+  <a href="https://github.com/theskumar/python-dotenv"><img src="https://img.shields.io/badge/python--dotenv-Config-ECD53F?style=for-the-badge" alt="python-dotenv"></a>
+  <a href="https://docs.pytest.org/"><img src="https://img.shields.io/badge/pytest-Tests-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white" alt="pytest"></a>
+</p>
+
+|  | Project | Official site | Role in Senti |
+| :---: | --- | --- | --- |
+| <img src="https://cdn.simpleicons.org/python/3776AB" width="28" alt=""> | **Python** | [python.org](https://www.python.org/) | Runtime (3.11+) |
+| <img src="https://cdn.simpleicons.org/apple/000000" width="28" alt=""> | **macOS** | [apple.com/macos](https://www.apple.com/macos/) | Camera, TTS `say`, permissions |
+| <img src="https://cdn.simpleicons.org/qt/41CD52" width="28" alt=""> | **PySide6 / Qt** | [doc.qt.io/qtforpython-6](https://doc.qt.io/qtforpython-6/) · [qt.io](https://www.qt.io/) | Native window, AVFoundation capture, TTS |
+| <img src="https://cdn.simpleicons.org/numpy/013243" width="28" alt=""> | **NumPy** | [numpy.org](https://numpy.org/) | Frame arrays |
+| <img src="https://cdn.simpleicons.org/opencv/5C3EE8" width="28" alt=""> | **OpenCV** | [opencv.org](https://opencv.org/) | Overlays, sharpness, scene diff |
+| <img src="https://cdn.simpleicons.org/ultralytics/111F68" width="28" alt=""> | **Ultralytics YOLO26** | [ultralytics.com](https://www.ultralytics.com/) · [YOLO26 docs](https://docs.ultralytics.com/models/yolo26/) | Detection + tracking |
+| <img src="https://cdn.simpleicons.org/pytorch/EE4C2C" width="28" alt=""> | **PyTorch** | [pytorch.org](https://pytorch.org/) | Default YOLO path: MPS on Apple Silicon |
+| 🍎 | **MLX / yolo-mlx** | [MLX](https://github.com/ml-explore/mlx) · [yolo-mlx](https://github.com/thewebAI/yolo-mlx) | Optional native Metal detector (`YOLO_RUNTIME=mlx`; `pip install "yolo-mlx[tracking,convert]"`) |
+| <img src="https://cdn.simpleicons.org/ollama/111111" width="28" alt=""> | **Ollama** | [ollama.com](https://ollama.com/) | Local vision-language model |
+| 🔤 | **EasyOCR** | [jaided.ai/easyocr](https://www.jaided.ai/easyocr/) · [GitHub](https://github.com/JaidedAI/EasyOCR) | On-device text recognition |
+| 🎙️ | **faster-whisper** | [SYSTRAN/faster-whisper](https://github.com/SYSTRAN/faster-whisper) | Push-to-talk transcription |
+| 🎚️ | **sounddevice** | [python-sounddevice.readthedocs.io](https://python-sounddevice.readthedocs.io/) | Microphone capture |
+| ⚙️ | **python-dotenv** | [GitHub](https://github.com/theskumar/python-dotenv) | `.env` configuration |
+| <img src="https://cdn.simpleicons.org/pytest/0A9EDC" width="28" alt=""> | **pytest** | [docs.pytest.org](https://docs.pytest.org/) | Unit tests |
+
+Pinned versions live in [`requirements.txt`](requirements.txt).
+
+## 📋 Requirements
+
+- 🍎 macOS on Apple Silicon (developed on M2 Pro)
+- 🐍 Python 3.11 or newer
+- 📷 Built-in or Continuity Camera
+- 🔐 Camera permission (and microphone if voice input is on)
+- 🦙 [Ollama](https://ollama.com) with a vision model for scene descriptions
+
+<a id="quick-start"></a>
+
+## ⚡ Quick start
 
 ```bash
-cd /path/to/Senti
+git clone https://github.com/TeslaNeuro/Senti.git
+cd Senti
+
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # optional — defaults work for Phase 1
+
+cp .env.example .env
 ```
 
-## Run (Phase 1)
+Pull a local vision model, then launch:
 
 ```bash
-chmod +x scripts/run.sh
+ollama pull gemma4
 ./scripts/run.sh
 ```
 
-Or directly:
+Or:
 
 ```bash
 source .venv/bin/activate
 python -m app
 ```
 
-The app configures Qt plugin paths automatically via `app/qt_bootstrap.py`.
+On first launch, macOS will ask for camera access. Grant it to **Terminal** (or your IDE) if you start Senti from the command line. Ultralytics downloads `yolo26n.pt` into `models/` automatically (~6 MB) unless that file is already there.
 
-If the window opens but the camera is black or shows an error, **another app may be using the camera** (FaceTime, Zoom, Teams, Chrome, etc.). Quit those apps and relaunch.
+Optional native Metal path: install [yolo-mlx](https://github.com/thewebAI/yolo-mlx) with `pip install "yolo-mlx[tracking,convert]"`, then set `YOLO_RUNTIME=mlx`.
 
-On first launch, macOS will ask for camera permission. Grant access to **Terminal** (or your IDE) if running from the command line.
+> 💡 If the preview is black, another app (FaceTime, Zoom, Chrome, …) likely holds the camera. Quit it and relaunch.
 
-## What you should see
+## 🖥️ Using the app
 
-- Window titled **What Am I Looking At?**
-- Live camera preview with **YOLO26 bounding boxes**, labels, confidence, and **track IDs** (`#1`, `#2`, …)
-- Each object keeps the same ID while it stays in view
-- Distinct box colors per track ID
-- State transitions: `WATCHING` → `SCENE_CHANGED` → `WAITING_FOR_STABILITY` → `READY`
-- Scene change uses visual diff + object new/lost + spatial movement (not YOLO alone)
-- When scene reaches `READY`, the **best frame** is picked from a rolling buffer (sharpness, stability, object size/position, confidence, lighting)
-- The app **automatically** sends that frame to the local VLM when the scene stabilizes
-- **Ask** follow-up questions in the text box (e.g. "What's that connector?", "What objects do you see?")
-- Use the **Focus** dropdown to analyze a specific tracked object (`#1 cup`, `#2 phone`, …)
-- Object-focused questions auto-crop the most likely target before sending to the VLM
-- **OCR** reads visible text when enabled — ask `read this` or let it run automatically on scene `READY`
-- Detected text is passed to the VLM as extra context
-- **TTS** speaks assistant responses aloud when enabled (auto or via **Speak** / `say that`)
-- **Voice input** — click **Mic**, ask your question aloud, click **Stop** to send it
-- Simple questions may be answered instantly from scene memory without a new VLM call
-- Click **Analyze** anytime for a manual re-check (bypasses cooldown)
-- Assistant response appears in the main panel; VLM status shows in the status bar
-- Status bar: Camera ●, YOLO26 ● (device), VLM (inactive)
-- Camera FPS, YOLO FPS, and inference latency (ms)
-- State: `WATCHING` when the camera is running
+| Action | What happens |
+| --- | --- |
+| 👀 Watch the preview | Live boxes, labels, confidence, track IDs (`#1`, `#2`, …) |
+| ⏳ Wait for `READY` | Automatic VLM description of the best buffered frame |
+| 💬 Type in **Ask** | Follow-up against scene memory, or a new VLM call when needed |
+| 🎯 **Focus** dropdown | Analyze a specific tracked object (cropped when enabled) |
+| 🔁 **Analyze** | Force a fresh VLM pass (bypasses cooldown) |
+| 🧹 **Clear** | Reset scene memory and the response panel |
+| 🔊 **Speak** / *say that* | Replay the current answer (when TTS is on) |
+| 🎙️ **Mic** / **Stop** | Push-to-talk; **Esc** cancels an in-progress recording |
+| 📖 *read this* | Run OCR on the current scene |
 
-On first run, Ultralytics downloads `yolo26n.pt` automatically (~6 MB).
+Status bar shows camera, YOLO device, VLM activity, FPS, and inference latency. Hover a pill for the full detail.
 
-### VLM setup (Phase 6)
+Step-by-step walkthrough: **[Usage](docs/usage.md)**.
 
-Install and run [Ollama](https://ollama.com), then pull a vision model:
+## ⚙️ Configuration
 
-```bash
-ollama pull gemma4
-# or: ollama pull llava
-```
+Copy `.env.example` to `.env`. Important defaults:
 
-Copy config and adjust if needed:
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CAMERA_WIDTH` / `CAMERA_HEIGHT` | `1280` / `720` | Capture size |
+| `YOLO_MODEL` | `yolo26n.pt` | Weights filename; stored in `models/` (`yolo26s.pt` is more accurate) |
+| `YOLO_RUNTIME` | `auto` | `auto` (Ultralytics unless `YOLO_DEVICE=mlx`), `ultralytics` (PyTorch MPS), or `mlx` (yolo-mlx Metal) |
+| `YOLO_DEVICE` | `auto` | `auto` → PyTorch `mps` on Apple Silicon; `mlx` for yolo-mlx |
+| `VLM_MODEL` | `gemma4` | Ollama vision model |
+| `VLM_BASE_URL` | `http://localhost:11434` | Local Ollama API |
+| `OCR_ENABLED` | `false` | On-device text recognition |
+| `TTS_ENABLED` | `false` | Speak answers aloud |
+| `VOICE_ENABLED` | `false` | Whisper push-to-talk |
 
-```bash
-cp .env.example .env
-```
+Optional features (OCR, TTS, voice) are off until you turn them on. Full reference: **[Configuration](docs/configuration.md)**.
 
-```env
-VLM_MODEL=gemma4
-VLM_BASE_URL=http://localhost:11434
-```
-
-Then launch the app. Analysis runs automatically when the scene reaches `READY`, or click **Analyze** for a manual check.
-
-### OCR setup (Phase 10)
-
-Enable in `.env`:
+<details>
+<summary>🎛 Optional extras</summary>
 
 ```env
 OCR_ENABLED=true
-OCR_RUNTIME=easyocr
-OCR_LANGUAGES=en
-```
-
-Install dependencies (first run downloads EasyOCR models):
-
-```bash
-pip install easyocr
-```
-
-Then ask **read this** in the chat box, or let OCR run automatically when the scene stabilizes.
-
-### TTS setup (Phase 11)
-
-Enable in `.env`:
-
-```env
 TTS_ENABLED=true
-TTS_AUTO_SPEAK=true
-```
-
-Uses the built-in macOS speech engine (no extra install). Click **Speak** to replay the current response, or ask **say that** / **read aloud**.
-
-Qt only exposes a small set of voices. If your voice (e.g. **Tessa**) is not in that list, leave `TTS_RUNTIME=auto` (default) and the app will fall back to the macOS `say` command automatically.
-
-### Voice input setup (Phase 12)
-
-Enable in `.env`:
-
-```env
+TTS_RUNTIME=auto
 VOICE_ENABLED=true
-VOICE_RUNTIME=whisper
 VOICE_MODEL=base
 ```
 
-Install dependencies (first run downloads the Whisper model):
+`TTS_RUNTIME=auto` uses Qt when it exposes your voice, otherwise the macOS `say` command (so names like **Tessa** still work). First OCR or Whisper use downloads models in the background.
+
+</details>
+
+## 🧪 Tests
 
 ```bash
-pip install sounddevice faster-whisper
-```
-
-Click **Mic** to start recording, speak your question, then click **Stop**. The transcript is sent to the same Ask pipeline as typed questions.
-
-## Polish (Phase 13)
-
-- **Clear** resets scene memory and the response panel
-- **Esc** stops an in-progress voice recording
-- Status indicators show full details on hover
-- Controls disable while analyzing, transcribing, or running OCR
-- Whisper model loads on first voice use (faster app startup)
-- Duplicate `.env` keys are logged at startup (last value wins)
-
-## Troubleshooting startup messages
-
-| Message | Meaning | Action |
-| --- | --- | --- |
-| `Voice 'Tessa' is not exposed by Qt; using macOS say backend` | Normal — Qt only lists a few voices | No action needed with `TTS_RUNTIME=auto` |
-| `Using CPU` from EasyOCR | EasyOCR has no Apple Silicon GPU path | Expected on Mac; OCR still works |
-| `AVFFrameReceiver` / `AVFAudioReceiver` duplicate class | OpenCV and PyAV both ship FFmpeg libs | Usually harmless; appears when voice/OCR load |
-| `torch.quantize_per_tensor` deprecation | PyTorch warning from faster-whisper | Hidden unless `DEBUG_MODE=true` |
-| `NSCameraUseContinuityCameraDeviceType` | Continuity Camera hint | Added to `resources/Info.plist` for `run.sh` |
-
-First OCR or voice use may take longer while models load in the background.
-
-## Configuration
-
-See `.env.example`. Key settings:
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `CAMERA_DEVICE` | `0` | Camera index |
-| `CAMERA_WIDTH` | `1280` | Preferred capture width |
-| `CAMERA_HEIGHT` | `720` | Preferred capture height |
-| `TARGET_FPS` | `30` | Preferred frame rate |
-| `FRAME_BUFFER_SIZE` | `8` | Max in-memory frames (oldest dropped) |
-| `YOLO_MODEL` | `yolo26n.pt` | Ultralytics YOLO26 weights |
-| `YOLO_CONFIDENCE` | `0.5` | Detection confidence threshold |
-| `YOLO_IMAGE_SIZE` | `640` | YOLO inference size |
-| `YOLO_DEVICE` | `auto` | `auto`, `mps`, or `cpu` |
-| `TRACKING_ENABLED` | `true` | Enable ByteTrack/BoT-SORT tracking |
-| `TRACKER_TYPE` | `bytetrack.yaml` | `bytetrack.yaml` or `botsort.yaml` |
-| `SCENE_CHANGE_THRESHOLD` | `0.15` | Sensitivity for scene-change detection |
-| `STABILITY_FRAMES` | `10` | Stable frames required before `READY` |
-| `SELECTION_BUFFER_SIZE` | `12` | Rolling buffer size for best-frame selection |
-| `VLM_MODEL` | `gemma4` | Ollama vision model name |
-| `VLM_RUNTIME` | `ollama` | Local VLM backend |
-| `VLM_BASE_URL` | `http://localhost:11434` | Ollama API URL |
-| `VLM_COOLDOWN` | `5.0` | Minimum seconds between automatic analyses |
-| `VLM_AUTO_ANALYZE` | `true` | Auto-run VLM when scene reaches `READY` |
-| `CONVERSATION_MAX_TURNS` | `8` | Recent Q&A turns kept for follow-ups |
-| `CONTEXT_STALE_FRAMES` | `45` | Re-analyze with a fresh frame after this many frames |
-| `OBJECT_CROP_ENABLED` | `true` | Crop detected objects before focused VLM analysis |
-| `OBJECT_CROP_PADDING` | `0.15` | Padding around object crops (ratio of bbox size) |
-| `OCR_ENABLED` | `false` | Enable local text recognition |
-| `OCR_RUNTIME` | `easyocr` | OCR backend |
-| `OCR_LANGUAGES` | `en` | Comma-separated EasyOCR languages |
-| `OCR_MIN_CONFIDENCE` | `0.4` | Minimum OCR confidence to keep a line |
-| `OCR_AUTO_ON_READY` | `true` | Run OCR when scene reaches `READY` |
-| `TTS_ENABLED` | `false` | Speak assistant responses aloud |
-| `TTS_RUNTIME` | `auto` | `auto`, `qt`, or `say` (macOS `say` supports all system voices) |
-| `TTS_AUTO_SPEAK` | `true` | Auto-speak new VLM/OCR answers |
-| `TTS_RATE` | `0.0` | Speech rate from `-1.0` (slow) to `1.0` (fast) |
-| `TTS_VOLUME` | `1.0` | Speech volume `0.0`–`1.0` |
-| `TTS_VOICE` | *(empty)* | Optional macOS voice name substring |
-| `TTS_INTERRUPT` | `true` | Stop current speech when new text arrives |
-| `VOICE_ENABLED` | `false` | Enable push-to-talk microphone questions |
-| `VOICE_RUNTIME` | `whisper` | Local speech-to-text backend |
-| `VOICE_MODEL` | `base` | Whisper model (`tiny`, `base`, `small`, …) |
-| `VOICE_LANGUAGE` | `en` | Transcription language (empty = auto-detect) |
-| `VOICE_MAX_SECONDS` | `8.0` | Auto-stop recording after this many seconds |
-| `VOICE_MIN_SECONDS` | `0.6` | Ignore recordings shorter than this |
-
-## Test
-
-```bash
+source .venv/bin/activate
 pytest tests/ -q
 ```
 
-## Privacy
+## 📚 Documentation
 
-- No cloud uploads
-- No recording or disk storage of camera frames
-- Frames remain in a bounded in-memory buffer only
+| | Guide | Contents |
+| :---: | --- | --- |
+| 🏗️ | [Architecture](docs/architecture.md) | Layers, threads, scene states, package map |
+| 🖱️ | [Usage](docs/usage.md) | Window tour, questions, focus, speech, voice |
+| ⚙️ | [Configuration](docs/configuration.md) | Every `.env` setting and sensible ranges |
+| 🩺 | [Troubleshooting](docs/troubleshooting.md) | Camera, Qt, Ollama, OCR, TTS, Whisper |
+| 🛡️ | [Security](SECURITY.md) | Privacy model and how to report issues |
+| 📜 | [License](LICENSE) | MIT License |
 
-## Roadmap
+<a id="privacy"></a>
 
-1. ✅ Phase 1 — Camera preview + FPS
-2. ✅ Phase 2 — YOLO26 detection + bounding boxes
-3. ✅ Phase 3 — Object tracking
-4. ✅ Phase 4 — Scene change detection
-5. ✅ Phase 5 — Best-frame selection
-6. ✅ Phase 6 — Local VLM (manual Analyze)
-7. ✅ Phase 7 — Automatic VLM scheduling
-8. ✅ Phase 8 — Conversational scene context
-9. ✅ Phase 9 — Object-focused crops
-10. ✅ Phase 10 — Local OCR
-11. ✅ Phase 11 — macOS TTS
-12. ✅ Phase 12 — Voice input
-13. ✅ Phase 13 — Polish
+## 🔐 Privacy
 
-## YOLO26 on Apple Silicon
+Senti is **local-first**:
 
-Ultralytics YOLO26 supports inference via PyTorch MPS:
+- 🚫 Camera frames are never written to disk
+- 🧠 The frame buffer is bounded and in-memory only
+- 💻 YOLO, OCR, Whisper, and the VLM run on-device (Ollama on localhost)
+- 📡 No telemetry, no cloud uploads, no account
 
-```python
-from ultralytics import YOLO
-model = YOLO("yolo26n.pt")
-results = model.predict(source=frame, device="mps")
+See [SECURITY.md](SECURITY.md) for the threat model and reporting.
+
+## 📁 Project layout
+
+```text
+Senti/
+├── app/                 Application package
+│   ├── camera/          Qt / AVFoundation capture + in-memory buffer
+│   ├── detection/       YOLO26 worker
+│   ├── tracking/        ByteTrack / BoT-SORT monitor
+│   ├── perception/      Scene change, stability, best-frame selection
+│   ├── vision/          Local VLM, scheduler, object crops
+│   ├── scene/           Conversational scene memory
+│   ├── ocr/             EasyOCR worker
+│   ├── speech/          Qt TTS + macOS say
+│   ├── voice/           Push-to-talk + faster-whisper
+│   └── ui/              Native desktop window
+├── docs/                Architecture, usage, configuration
+│   └── assets/          README graphics (logo, banner, pipeline)
+├── models/              YOLO26 weights (gitignored *.pt / *.npz)
+├── scripts/run.sh       Create venv, install, launch
+├── tests/               Unit tests
+└── resources/Info.plist Camera and microphone usage strings
 ```
 
-An optional MLX-native path (`yolo-mlx`) can be evaluated later for higher throughput. Phase 2 will use official Ultralytics YOLO26 as required.
+<a id="license"></a>
+
+## 📄 License
+
+Senti is released under the [MIT License](LICENSE).
+
+Copyright (c) 2026 **Arshia Keshvari**.
+
+<p align="center">
+  <img src="docs/assets/senti-logo.png" width="72" alt="Senti">
+  <br>
+  <sub>Built on-device. Nothing leaves your Mac.</sub>
+</p>

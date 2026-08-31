@@ -1,0 +1,6 @@
+# Copyright (c) 2026 Arshia Keshvari
+# SPDX-License-Identifier: MIT
+#
+# Keep this directory in git so YOLO weights can be placed here locally.
+# Downloaded `*.pt` files are gitignored.
+

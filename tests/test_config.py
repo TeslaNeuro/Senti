@@ -1,3 +1,9 @@
+# Copyright (c) 2026 Arshia Keshvari
+# SPDX-License-Identifier: MIT
+#
+# This file is part of Senti.
+# Licensed under the MIT License. See the LICENSE file for details.
+
 """Configuration validation tests."""
 
 import pytest
@@ -9,6 +15,13 @@ def test_invalid_camera_dimensions(monkeypatch: pytest.MonkeyPatch) -> None:
   monkeypatch.setenv("CAMERA_WIDTH", "0")
   config = AppConfig.load()
   with pytest.raises(ValueError, match="Camera dimensions"):
+    config.validate()
+
+
+def test_invalid_yolo_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+  monkeypatch.setenv("YOLO_RUNTIME", "tensorrt")
+  config = AppConfig.load()
+  with pytest.raises(ValueError, match="YOLO_RUNTIME"):
     config.validate()
 
 
