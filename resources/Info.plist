@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>What Am I Looking At?</string>
+  <key>CFBundleDisplayName</key>
+  <string>What Am I Looking At?</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.senti.what-am-i-looking-at</string>
+  <key>CFBundleVersion</key>
+  <string>0.1.0</string>
+  <key>NSCameraUsageDescription</key>
+  <string>This app uses the camera to understand what you are looking at. Frames stay in memory and are never recorded.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Microphone access is used for push-to-talk voice questions.</string>
+  <key>NSCameraUseContinuityCameraDeviceType</key>
+  <true/>
+</dict>
+</plist>
